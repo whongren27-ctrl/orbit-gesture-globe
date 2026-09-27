@@ -28,7 +28,7 @@ function LandPoints({quality,onError}){
   const [positions,setPositions]=useState(null);
   useEffect(()=>{
     const abort=new AbortController();
-    fetch('/data/land-points.bin',{signal:abort.signal})
+    fetch(`${import.meta.env.BASE_URL}data/land-points.bin`,{signal:abort.signal})
       .then(response=>{if(!response.ok)throw new Error('Map point data failed to load');return response.arrayBuffer();})
       .then(buffer=>{if(buffer.byteLength%12!==0)throw new Error('Map point data is invalid');setPositions(new Float32Array(buffer));})
       .catch(error=>{if(error.name!=='AbortError')onError?.(error.message);});

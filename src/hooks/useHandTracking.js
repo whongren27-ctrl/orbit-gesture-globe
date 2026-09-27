@@ -108,7 +108,8 @@ export function useHandTracking(controller) {
         stream.getVideoTracks()[0].onended = () => fail(new Error('Camera disconnected. Reconnect your webcam and retry.'));
         setStatus(current => ({ ...current, camera: 'LOADING MODEL' }));
 
-        worker = new Worker('/hand-worker.js');
+        const assetBase = import.meta.env.BASE_URL;
+        worker = new Worker(`${assetBase}hand-worker.js`);
         watchdog = setTimeout(() => fail(new Error('Hand tracker took too long to load. Please retry.')), 45000);
         worker.onerror = event => fail(new Error(event.message || 'Hand tracker could not initialize.'));
         worker.onmessage = ({ data }) => {
@@ -142,7 +143,7 @@ export function useHandTracking(controller) {
             lastStatusAt = now;
           }
         };
-        worker.postMessage({ type: 'init', base: location.origin });
+        worker.postMessage({ type: 'init', base: assetBase });
       } catch (error) {
         fail(error);
       }
