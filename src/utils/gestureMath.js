@@ -82,14 +82,18 @@ export function classifyGestureDetails(lm,previous='NONE',handedness='Right') {
   const states=fingerScores.map(fingerState);
   const surface=classifyHandSurface(lm,handedness);
   const ratio=distance(lm[4],lm[8])/scale;
-  const pinchLimit=(previous==='PINCH'||previous==='BACKHAND'||previous==='METEOR')?.42:.32;
+  // Pinch hysteresis belongs only to an active pinch. Extending it to other
+  // poses made a relaxed thumb accidentally switch rotation or city navigation
+  // into zoom mode.
+  const pinchLimit=previous==='PINCH'?.4:.32;
   const certaintyFor=(indices,expected)=>indices.reduce((sum,index)=>sum+(expected==='EXTENDED'?fingerScores[index]:1-fingerScores[index]),0)/indices.length;
   const structure=(indices,expected)=>indices.every(index=>states[index]===expected);
-  const palm=structure([0,1,2,3],'EXTENDED');
+  const palm=fingerScores.every(score=>score>=.52);
   const threeFinger=fingerScores[0]>=.52&&fingerScores[1]>=.52&&fingerScores[2]>=.52&&fingerScores[3]<=.56;
-  const victory=structure([0,1],'EXTENDED')&&structure([2,3],'FOLDED');
-  const fist=fingerScores.every(score=>score<=.44);
-  const pinch=ratio<pinchLimit&&fingerScores[0]>=.44;
+  const victory=fingerScores[0]>=.58&&fingerScores[1]>=.58&&fingerScores[2]<=.4&&fingerScores[3]<=.4;
+  const fist=fingerScores.every(score=>score<=.4);
+  const pinch=ratio<pinchLimit&&fingerScores[0]>=.58;
+  const backhand=palm&&surface==='BACK'&&fingerScores.every(score=>score>=.64);
 
   // Explicit three-finger and victory shapes win over thumb proximity; a
   // relaxed thumb must not steal the meteor gesture as PINCH.
@@ -101,7 +105,7 @@ export function classifyGestureDetails(lm,previous='NONE',handedness='Right') {
     gesture='PINCH';
     fingerConfidence=clamp(.62+certaintyFor([0],'EXTENDED')*.2+(pinchLimit-ratio)/Math.max(pinchLimit,.01)*.18,0,1);
   }
-  else if(palm&&surface==='BACK'){gesture='BACKHAND';fingerConfidence=certaintyFor([0,1,2,3],'EXTENDED');}
+  else if(backhand){gesture='BACKHAND';fingerConfidence=certaintyFor([0,1,2,3],'EXTENDED');}
   else if(palm){gesture='PALM';fingerConfidence=certaintyFor([0,1,2,3],'EXTENDED');}
   else fingerConfidence=clamp(fingerScores.reduce((sum,score)=>sum+Math.abs(score-.5)*2,0)/4,0,1);
 

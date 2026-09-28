@@ -1,10 +1,10 @@
 export const GESTURE_DWELL_MS = Object.freeze({
-  PALM: 65,
-  BACKHAND: 70,
-  PINCH: 55,
-  FIST: 115,
-  VICTORY: 150,
-  THREE_FINGER: 250,
+  PALM: 70,
+  BACKHAND: 130,
+  PINCH: 75,
+  FIST: 135,
+  VICTORY: 180,
+  THREE_FINGER: 280,
 });
 
 const STABLE_GESTURE = Object.freeze({
@@ -26,7 +26,7 @@ const STABLE_STATE = Object.freeze({
 });
 
 export class GestureStateMachine {
-  constructor({ confidenceThreshold = .48, resetCooldownMs = 1000, meteorCooldownMs = 2500 } = {}) {
+  constructor({ confidenceThreshold = .45, resetCooldownMs = 1000, meteorCooldownMs = 2500 } = {}) {
     this.confidenceThreshold = confidenceThreshold;
     this.resetCooldownMs = resetCooldownMs;
     this.meteorCooldownMs = meteorCooldownMs;
@@ -46,6 +46,8 @@ export class GestureStateMachine {
     this.meteorReleased = true;
     this.cityFocusLocked = false;
     this.citySwipeUntil = 0;
+    this.lastStableAt = -Infinity;
+    this.dropoutGraceMs = 110;
   }
 
   update(rawGesture, confidence, now = performance.now(), hasHand = true) {
@@ -63,11 +65,13 @@ export class GestureStateMachine {
       this.victoryLatched = false;
       this.meteorReleased = true;
       this.citySwipeUntil = 0;
+      this.lastStableAt = -Infinity;
       this.state = 'IDLE';
       return this.result(changed, null, 0);
     }
 
     if (!Number.isFinite(confidence) || confidence < this.confidenceThreshold) {
+      if (this.gesture !== 'NONE' && now - this.lastStableAt <= this.dropoutGraceMs) return this.result(false, null, 0);
       this.candidate = null;
       this.candidateSince = now;
       this.gestureStartTime = now;
@@ -95,6 +99,7 @@ export class GestureStateMachine {
       this.gesture = 'PINCH';
       this.candidate = null;
       this.gestureStableTime = 0;
+      this.lastStableAt = now;
       return this.result(false, null, 1);
     }
     if (this.cityFocusLocked && gesture !== 'PINCH') {
@@ -104,6 +109,7 @@ export class GestureStateMachine {
     }
 
     if (gesture === 'NONE') {
+      if (this.gesture !== 'NONE' && now - this.lastStableAt <= this.dropoutGraceMs) return this.result(false, null, 0);
       this.candidate = null;
       this.candidateSince = now;
       this.gestureStartTime = now;
@@ -148,6 +154,7 @@ export class GestureStateMachine {
       this.previousGesture = this.gesture;
       this.gesture = 'METEOR';
       this.state = 'METEOR_TRIGGERED';
+      this.lastStableAt = now;
       return this.result(true, 'METEOR_SHOWER', stabilityConfidence);
     }
 
@@ -165,6 +172,7 @@ export class GestureStateMachine {
     this.currentGesture = nextGesture;
     this.gesture = nextGesture;
     if (this.state !== 'CITY_SWIPE' || now >= this.citySwipeUntil || gesture !== 'BACKHAND') this.state = nextState;
+    this.lastStableAt = now;
     const action = gesture === 'VICTORY' && changed ? 'RESET' : null;
     return this.result(changed, action, stabilityConfidence);
   }
@@ -178,6 +186,7 @@ export class GestureStateMachine {
     this.candidateSince = 0;
     this.gestureStartTime = 0;
     this.gestureStableTime = 0;
+    this.lastStableAt = performance.now();
   }
 
   leaveCityFocus() {
@@ -191,6 +200,7 @@ export class GestureStateMachine {
     this.gesture = 'BACKHAND';
     this.currentGesture = 'BACKHAND';
     this.citySwipeUntil = now + duration;
+    this.lastStableAt = now;
   }
 
   forceReset(gesture = 'NONE') {

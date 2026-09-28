@@ -7,9 +7,9 @@ export const DEFAULT_VIEW = { x: .13, y: -.42, zoom: 1 };
 export const GESTURE_CONFIG = Object.freeze({
   // Keep the dead zone below normal landmark drift, but let intentional palm
   // movement reach rotational velocity on the next tracking samples.
-  rotation: { sensitivityX: 2.45, sensitivityY: 2.7, deadZone: .0055, damping: .93, response: .52 },
+  rotation: { sensitivityX: 2.95, sensitivityY: 3.2, deadZone: .0045, damping: .93, response: .58 },
   // A short, deliberate back-of-hand flick should be enough to advance a city.
-  swipe: { distance: .06, velocity: .09, maxDurationMs: 850, cooldownMs: 460, horizontalRatio: .95 },
+  swipe: { distance: .055, velocity: .1, maxDurationMs: 850, cooldownMs: 460, horizontalRatio: 1.05 },
 });
 
 const easeInOutCubic = value => value < .5
@@ -38,10 +38,10 @@ export class GestureController {
     this.lastTime = 0;
     this.previousSmoothX = null;
     this.previousSmoothY = null;
-    this.handFilterX = new OneEuroFilter({ minCutoff: 1.45, beta: 2.15, minAlpha: .25, maxAlpha: .82 });
-    this.handFilterY = new OneEuroFilter({ minCutoff: 1.45, beta: 2.15, minAlpha: .25, maxAlpha: .82 });
-    this.indexFilterX = new OneEuroFilter({ minCutoff: 3.2, beta: 1.85, minAlpha: .25, maxAlpha: .9 });
-    this.indexFilterY = new OneEuroFilter({ minCutoff: 3.2, beta: 1.85, minAlpha: .25, maxAlpha: .9 });
+    this.handFilterX = new OneEuroFilter({ minCutoff: 1.3, beta: 1.65, minAlpha: .2, maxAlpha: .76 });
+    this.handFilterY = new OneEuroFilter({ minCutoff: 1.3, beta: 1.65, minAlpha: .2, maxAlpha: .76 });
+    this.indexFilterX = new OneEuroFilter({ minCutoff: 2.8, beta: 1.55, minAlpha: .22, maxAlpha: .82 });
+    this.indexFilterY = new OneEuroFilter({ minCutoff: 2.8, beta: 1.55, minAlpha: .22, maxAlpha: .82 });
     this.resetting = false;
     this.paused = false;
     this.lastPinch = null;
@@ -307,8 +307,8 @@ export class GestureController {
     } else {
       const dx = deadZone((this.smooth.x - (this.previousSmoothX ?? this.smooth.x)) / dt, GESTURE_CONFIG.rotation.deadZone);
       const dy = deadZone((this.smooth.y - (this.previousSmoothY ?? this.smooth.y)) / dt, GESTURE_CONFIG.rotation.deadZone);
-      this.targetAngularVelocity.y = clamp(dx * GESTURE_CONFIG.rotation.sensitivityY, -3.5, 3.5);
-      this.targetAngularVelocity.x = clamp(dy * GESTURE_CONFIG.rotation.sensitivityX, -2.6, 2.6);
+      this.targetAngularVelocity.y = clamp(dx * GESTURE_CONFIG.rotation.sensitivityY, -4, 4);
+      this.targetAngularVelocity.x = clamp(dy * GESTURE_CONFIG.rotation.sensitivityX, -3, 3);
       this.angularInputHold = dx !== 0 || dy !== 0 ? .09 : 0;
     }
     this.previousSmoothX = this.smooth.x;
@@ -363,7 +363,7 @@ export class GestureController {
 
     const session = this.swipeSession;
     session.lastPointAt = time;
-    if (this.swipeLocked && time >= this.swipeCooldownUntil && Math.abs(this.swipeDeltaX) < GESTURE_CONFIG.swipe.distance * .4) {
+    if (this.swipeLocked && time >= this.swipeCooldownUntil && Math.abs(this.swipeDeltaX) < GESTURE_CONFIG.swipe.distance * .8) {
       // Let a held back-of-hand gesture perform another deliberate flick after it
       // returns to its center, without requiring the user to fold the finger.
       this.swipeLocked = false;
