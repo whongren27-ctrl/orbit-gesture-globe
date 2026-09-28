@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clamp, deadZone, lerp, classifyGestureDetails, normalizeHandCoordinates, OneEuroFilter } from '../utils/gestureMath.js';
-import { cameraDistanceToZoom, DEFAULT_CAMERA_DISTANCE, normalizedPinchDistance, zoomToCameraDistance } from '../utils/cameraMath.js';
+import { cameraDistanceToZoom, DEFAULT_CAMERA_DISTANCE, zoomToCameraDistance } from '../utils/cameraMath.js';
 import { GESTURE_DWELL_MS, GestureStateMachine } from './GestureStateMachine.js';
 
 export const DEFAULT_VIEW = { x: .13, y: -.42, zoom: 1 };
@@ -8,7 +8,7 @@ export const GESTURE_CONFIG = Object.freeze({
   // Keep the dead zone below normal landmark drift, but let intentional palm
   // movement reach rotational velocity on the next tracking samples.
   rotation: { sensitivityX: 2.95, sensitivityY: 3.2, deadZone: .0045, damping: .93, response: .58 },
-  // A short, deliberate back-of-hand flick should be enough to advance a city.
+  // A short, deliberate open-palm flick advances the active city focus.
   swipe: { distance: .055, velocity: .1, maxDurationMs: 850, cooldownMs: 460, horizontalRatio: 1.05 },
 });
 
@@ -69,6 +69,9 @@ export class GestureController {
     this.swipeVelocity = 0;
     this.pendingCitySwipe = null;
     this.pendingMeteorTrigger = false;
+    this.twoHandSwipe = null;
+    this.twoHandActive = false;
+    this.twoHandCooldownUntil = 0;
     this.gestureAction = '';
     this.gestureActionUntil = 0;
     this.debug = {
@@ -116,6 +119,8 @@ export class GestureController {
     this.lastPinch = null;
     this.hoveredCity = null;
     this.swipeSession = null;
+    this.twoHandSwipe = null;
+    this.twoHandActive = false;
     this.stateMachine.forceReset(fromGesture ? 'VICTORY' : 'NONE');
     this.machineState = 'RESET';
     this.gesture = fromGesture ? 'VICTORY' : 'NONE';
@@ -164,6 +169,8 @@ export class GestureController {
     this.lastPinch = null;
     this.hoveredCity = null;
     this.swipeSession = null;
+    this.twoHandSwipe = null;
+    this.twoHandActive = false;
     if (source === 'gesture') {
       this.stateMachine.enterCityFocus({ lockPinch: true });
       this.machineState = 'CITY_FOCUS';
@@ -231,7 +238,7 @@ export class GestureController {
     this.debug.state = 'IDLE';
   }
 
-  input(landmarks, time = performance.now(), confidence = 1, handedness = 'Right') {
+  input(landmarks, time = performance.now(), confidence = 1, handedness = 'Right', allHands = [], handednesses = []) {
     if (!landmarks || landmarks.length !== 21) {
       this.clear(time);
       return;
@@ -255,17 +262,10 @@ export class GestureController {
     const transition = this.stateMachine.update(raw, this.gestureConfidence, time, true);
     this.machineState = transition.state;
     this.gesture = transition.gesture;
-    if (this.machineState === 'METEOR_READY' && raw === 'THREE_FINGER') this.gesture = 'METEOR';
     this.candidate = transition.candidate || 'NONE';
     this.count = transition.candidate ? 1 : 0;
     if (transition.action === 'RESET') this.reset({ fromGesture: true });
-    if (transition.action === 'METEOR_SHOWER') {
-      this.pendingMeteorTrigger = true;
-      this.markActivity();
-      this.setGestureAction('METEOR EVENT', time, 1400);
-    }
-
-    this.paused = this.machineState === 'HOLD';
+    this.paused = false;
     if (this.machineState === 'ROTATE' || this.machineState === 'PINCH' || this.machineState === 'CITY_NAVIGATE' || this.machineState === 'CITY_SWIPE') {
       this.resetting = false;
     }
@@ -298,6 +298,7 @@ export class GestureController {
     this.pinchNdc.x = (1 - (landmarks[4].x + landmarks[8].x) / 2) * 2 - 1;
     this.pinchNdc.y = 1 - ((landmarks[4].y + landmarks[8].y) / 2) * 2;
 
+    this.updateTwoHandSwipe(allHands, handednesses, time, dt);
     this.updateSwipe(raw, time, dt);
     const confidentGesture = this.gestureConfidence >= .5;
     if (!confidentGesture || this.gesture !== 'PALM' || this.machineState !== 'ROTATE' || this.paused) {
@@ -314,16 +315,17 @@ export class GestureController {
     this.previousSmoothX = this.smooth.x;
     this.previousSmoothY = this.smooth.y;
 
-    if (confidentGesture && this.gesture === 'PINCH' && this.machineState === 'PINCH' && !this.paused) {
-      const normalizedPinch = normalizedPinchDistance(landmarks);
-      if (this.lastPinch) {
-        this.targetZoom = clamp(this.targetZoom * Math.exp(deadZone(Math.log(normalizedPinch / this.lastPinch), .008) * 2.25), .7, 1.65);
-        this.targetCameraDistance = zoomToCameraDistance(this.targetZoom);
-      }
-      this.lastPinch = lerp(this.lastPinch ?? normalizedPinch, normalizedPinch, .45);
+    if (confidentGesture && this.gesture === 'PINCH' && this.machineState === 'PINCH') {
+      this.targetZoom = clamp(this.targetZoom + dt * .46, .7, 1.65);
+      this.targetCameraDistance = zoomToCameraDistance(this.targetZoom);
       this.targetAngularVelocity.x = 0;
       this.targetAngularVelocity.y = 0;
-    } else if (this.gesture !== 'PINCH') this.lastPinch = null;
+    } else if (confidentGesture && this.gesture === 'FIST' && this.machineState === 'HOLD') {
+      this.targetZoom = clamp(this.targetZoom - dt * .46, .7, 1.65);
+      this.targetCameraDistance = zoomToCameraDistance(this.targetZoom);
+      this.targetAngularVelocity.x = 0;
+      this.targetAngularVelocity.y = 0;
+    }
 
     this.debug.rawGesture = raw;
     this.debug.stableGesture = this.gesture;
@@ -342,8 +344,8 @@ export class GestureController {
   }
 
   updateSwipe(raw, time, dt) {
-    const backhandArmed = this.machineState === 'CITY_NAVIGATE' || this.machineState === 'CITY_SWIPE' || this.stateMachine.candidate === 'BACKHAND';
-    if (raw !== 'BACKHAND' || !backhandArmed || !this.indexPosition) {
+    const palmArmed = this.machineState === 'ROTATE' || this.machineState === 'CITY_SWIPE' || this.stateMachine.candidate === 'PALM';
+    if (this.twoHandActive || raw !== 'PALM' || !palmArmed || !this.indexPosition) {
       // Ignore brief classifier flicker; webcam landmarks may shift for one frame during a swipe.
       if (this.swipeSession && time - this.swipeSession.lastPointAt <= 90) return;
       this.swipeSession = null;
@@ -364,8 +366,7 @@ export class GestureController {
     const session = this.swipeSession;
     session.lastPointAt = time;
     if (this.swipeLocked && time >= this.swipeCooldownUntil && Math.abs(this.swipeDeltaX) < GESTURE_CONFIG.swipe.distance * .8) {
-      // Let a held back-of-hand gesture perform another deliberate flick after it
-      // returns to its center, without requiring the user to fold the finger.
+      // Let a held palm perform another deliberate flick after it returns to center.
       this.swipeLocked = false;
       session.startX = position.x;
       session.startY = position.y;
@@ -392,15 +393,62 @@ export class GestureController {
     const enoughDistance = Math.abs(this.swipeDeltaX) >= GESTURE_CONFIG.swipe.distance;
     const enoughVelocity = Math.max(Math.abs(this.swipeVelocity), Math.abs(averageVelocity)) >= GESTURE_CONFIG.swipe.velocity;
     const mostlyHorizontal = Math.abs(this.swipeDeltaX) >= Math.abs(deltaY) * GESTURE_CONFIG.swipe.horizontalRatio;
-    if (!this.swipeLocked && this.machineState === 'CITY_NAVIGATE' && duration <= GESTURE_CONFIG.swipe.maxDurationMs && enoughDistance && enoughVelocity && mostlyHorizontal && this.gestureConfidence >= .54) {
+    if (!this.swipeLocked && this.machineState === 'ROTATE' && duration <= GESTURE_CONFIG.swipe.maxDurationMs && enoughDistance && enoughVelocity && mostlyHorizontal && this.gestureConfidence >= .54) {
       const direction = this.swipeDeltaX > 0 ? 'NEXT_CITY' : 'PREVIOUS_CITY';
       this.pendingCitySwipe = direction;
       this.swipeLocked = true;
       this.swipeCooldownUntil = time + GESTURE_CONFIG.swipe.cooldownMs;
-      this.stateMachine.setCitySwipe(time, GESTURE_CONFIG.swipe.cooldownMs);
+      this.stateMachine.setCitySwipe(time, GESTURE_CONFIG.swipe.cooldownMs, 'PALM');
       this.machineState = 'CITY_SWIPE';
       this.setGestureAction(direction === 'NEXT_CITY' ? 'NEXT NODE' : 'PREVIOUS NODE', time, 950);
       this.markActivity();
+    }
+  }
+
+  updateTwoHandSwipe(hands, handednesses, time, dt) {
+    const twoHands = Array.isArray(hands) && hands.length === 2 ? hands : null;
+    const openPalms = twoHands?.every((hand, index) => {
+      const details = classifyGestureDetails(hand, 'NONE', handednesses[index] || 'Right');
+      return details.pinchRatio > .4 && details.fingerScores.every(score => score >= .52);
+    });
+    if (!twoHands || !openPalms) {
+      this.twoHandSwipe = null;
+      this.twoHandActive = false;
+      return;
+    }
+
+    const center = hand => ({ x: 1 - (hand[0].x + hand[5].x + hand[9].x + hand[17].x) / 4 });
+    const first = center(twoHands[0]);
+    const second = center(twoHands[1]);
+    this.twoHandActive = true;
+    if (!this.twoHandSwipe) {
+      this.twoHandSwipe = { startA: first.x, startB: second.x, lastA: first.x, lastB: second.x, startedAt: time, latched: false };
+      return;
+    }
+
+    const session = this.twoHandSwipe;
+    const deltaA = first.x - session.lastA;
+    const deltaB = second.x - session.lastB;
+    const travelA = first.x - session.startA;
+    const travelB = second.x - session.startB;
+    const sameDirection = Math.sign(deltaA) === Math.sign(deltaB) && Math.abs(deltaA) > .004 && Math.abs(deltaB) > .004;
+    const speed = (Math.abs(deltaA) + Math.abs(deltaB)) / (2 * Math.max(dt, .001));
+    const enoughTravel = Math.min(Math.abs(travelA), Math.abs(travelB)) >= .07;
+    const duration = time - session.startedAt;
+    session.lastA = first.x;
+    session.lastB = second.x;
+    if (!session.latched && duration > 850) {
+      session.startA = first.x;
+      session.startB = second.x;
+      session.startedAt = time;
+      return;
+    }
+    if (!session.latched && time >= this.twoHandCooldownUntil && duration <= 850 && sameDirection && speed >= .26 && enoughTravel) {
+      session.latched = true;
+      this.twoHandCooldownUntil = time + 2500;
+      this.pendingMeteorTrigger = true;
+      this.markActivity();
+      this.setGestureAction('METEOR EVENT', time, 1400);
     }
   }
 

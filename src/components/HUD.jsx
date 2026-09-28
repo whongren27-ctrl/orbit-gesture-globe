@@ -1,7 +1,7 @@
 import {Hand,Pointer,Scan,Maximize,Minimize,RotateCcw,Camera,CameraOff,Orbit,MoveUpRight} from 'lucide-react';
 import {HAND_CONNECTIONS} from '../utils/gestureMath';
-const names={NONE:'AWAITING HAND',PALM:'OPEN PALM',BACKHAND:'BACK OF HAND',PINCH:'PINCH',FIST:'CLOSED FIST',VICTORY:'VICTORY',METEOR:'THREE FINGERS'};
-const instructions={NONE:'SHOW ONE OPEN PALM TO BEGIN',PALM:'ROTATION CONTROL · MOVE YOUR HAND',BACKHAND:'BACK OF HAND · SWIPE LEFT / RIGHT · CHANGE CITY',PINCH:'ZOOM CONTROL · MOVE HAND FORWARD / BACK',FIST:'PAUSED · OPEN PALM TO RESUME',VICTORY:'RESETTING TO DEFAULT VIEW',METEOR:'3 FINGERS UP · PINKY DOWN · HOLD 0.25 S'};
+const names={NONE:'AWAITING HAND',PALM:'OPEN PALM',PINCH:'PINCH',FIST:'CLOSED FIST',VICTORY:'VICTORY'};
+const instructions={NONE:'SHOW ONE OPEN PALM TO BEGIN',PALM:'MOVE TO ROTATE · FAST SWIPE TO CHANGE CITY',PINCH:'HOLD THUMB + INDEX · ZOOM IN',FIST:'HOLD FIST · ZOOM OUT',VICTORY:'RESETTING TO DEFAULT VIEW'};
 const diagram=[[47,132],[32,110],[21,89],[12,77],[8,62],[35,74],[29,49],[26,30],[23,15],[49,68],[46,40],[44,20],[43,5],[62,70],[64,44],[65,26],[66,12],[75,78],[83,59],[86,43],[88,30]];
 function HandDiagram({tracking}){return <div className={`hand-diagram ${tracking?'detected':''}`}><span className="corner tl"/><span className="corner tr"/><span className="corner bl"/><span className="corner br"/><svg viewBox="0 0 100 145" aria-hidden="true">{HAND_CONNECTIONS.map(([a,b],i)=><line key={i} x1={diagram[a][0]} y1={diagram[a][1]} x2={diagram[b][0]} y2={diagram[b][1]}/>)}{diagram.map(([x,y],i)=><circle key={i} cx={x} cy={y} r="1.6"/>)}<path d="M35 74L62 70L47 132M49 68L75 78L32 110M35 74L75 78" fill="none" strokeOpacity=".25"/></svg><div className="scan-line"/></div>}
 export default function HUD({tracking,telemetry,debug,setDebug,fullscreen,onFullscreen,onReset,focusedLocation,error}){

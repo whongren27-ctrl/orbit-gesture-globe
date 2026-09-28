@@ -135,7 +135,7 @@ export function useHandTracking(controller) {
           const now = performance.now();
           if (lastResultAt) lastFps = Math.min(30, Math.round(1000 / (now - lastResultAt)));
           lastResultAt = now;
-          controller.input(data.landmarks, now, data.confidence ?? 0, data.handedness ?? 'Right');
+          controller.input(data.landmarks, now, data.confidence ?? 0, data.handedness ?? 'Right', data.hands ?? [], data.handednesses ?? []);
 
           // Keep the renderer reading refs at inference speed; React/HUD only receives 10 Hz snapshots.
           if (now - lastStatusAt >= STATUS_INTERVAL_MS) {

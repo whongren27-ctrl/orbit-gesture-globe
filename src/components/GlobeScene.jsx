@@ -22,7 +22,6 @@ function World({controller,director,visualEvents,quality,focusedLocation,onTelem
  const group=useRef(),last=useRef(0),{camera,size}=useThree(),reducedMotion=useReducedMotion();
  const cameraController=useMemo(()=>new CameraController(),[]);
  const cityHover=useRef({name:null,since:0});
- const handledPinch=useRef(0);
  const citySamples=useMemo(()=>cities.map(city=>{
   const latitude=THREE.MathUtils.degToRad(city.lat),longitude=THREE.MathUtils.degToRad(city.lng);
   const normal=new THREE.Vector3(Math.cos(latitude)*Math.sin(longitude),Math.sin(latitude),Math.cos(latitude)*Math.cos(longitude));
@@ -76,12 +75,6 @@ function World({controller,director,visualEvents,quality,focusedLocation,onTelem
     else if(state.clock.elapsedTime-cityHover.current.since>=.22)controller.hoveredCity=candidate;
    }else{cityHover.current={name:null,since:0};controller.hoveredCity=null;}
   }else{cityHover.current={name:null,since:0};controller.hoveredCity=null;}
-
-  if(controller.pinchSequence!==handledPinch.current){
-   handledPinch.current=controller.pinchSequence;
-   const city=findNearestCity(controller.pinchNdc,Math.max(115,Math.min(165,size.width*.13)));
-   if(city)controller.focusLocation(city,{reducedMotion,duration:2.25,source:'gesture'});
-  }
 
   const aspect=size.width/size.height;
   const base=aspect<1.1?6.45:aspect<1.2?8.0:7.9;
